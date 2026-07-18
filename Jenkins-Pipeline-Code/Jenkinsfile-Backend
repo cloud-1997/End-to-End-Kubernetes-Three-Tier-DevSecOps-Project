@@ -3,10 +3,10 @@ pipeline {
     tools {
         nodejs 'NodeJs'
     }
-    environment  {
+    environment {
         SCANNER_HOME = tool 'sonar-scanner'
         AWS_ACCOUNT_ID = credentials('ACCOUNT_ID')
-        AWS_ECR_REPO_NAME = credentials('ECR_REPO02')
+        AWS_ECR_REPO_NAME = credentials('ECR_REPO01') // Ensure this matches backend repo name
         AWS_DEFAULT_REGION = 'us-east-2'
         REPOSITORY_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/"
     }
@@ -18,19 +18,22 @@ pipeline {
         }
         stage('Checkout from Git') {
             steps {
-                git credentialsId: 'GITHUB',
-                    branch: 'master',
+                git credentialsId: 'GITHUB', 
+                    branch: 'master', 
                     url: 'https://github.com/cloud-1997/End-to-End-Kubernetes-Three-Tier-DevSecOps-Project.git'
             }
         }
         stage('Sonarqube Analysis') {
             steps {
+                // Pointing to your backend source code directory
                 dir('Application-Code/backend') {
                     withSonarQubeEnv('sonar-server') {
                         sh """
                             $SCANNER_HOME/bin/sonar-scanner \
                             -Dsonar.projectKey=three-tier-backend \
-                            -Dsonar.sources=.
+                            -Dsonar.sources=. \
+                            -Dsonar.host.url=http://3.137.149.119:9000 \
+                            -Dsonar.login=squ_27eb2f8e9f39007152078ee47ada685264b2e14c
                         """
                     }
                 }
@@ -43,14 +46,6 @@ pipeline {
                 }
             }
         }
-        // stage('OWASP Dependency-Check Scan') {
-        //     steps {
-        //         dir('Application-Code/backend') {
-        //             dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit', odcInstallation: 'DP-Check'
-        //             dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-        //         }
-        //     }
-        // }
         stage('Trivy File Scan') {
             steps {
                 dir('Application-Code/backend') {
@@ -89,24 +84,20 @@ pipeline {
                 GIT_USER_NAME = "cloud-1997"
             }
             steps {
+                // Pointing to your backend K8s manifest directory
                 dir('Kubernetes-Manifests-file/Backend') {
-                    // Changed credentialsId to match your 'GITHUB' capital entry
                     withCredentials([usernamePassword(credentialsId: 'GITHUB', usernameVariable: 'GIT_USER', passwordVariable: 'GITHUB_TOKEN')]) {
-                        sh '''
+                        sh """
                             git config user.email "rohitbomman1997@gmail.com"
                             git config user.name "cloud-1997"
                             
-                            # Reading the image tag from the deployment file
-                            imageTag=$(grep -oP '(?<=backend:)[^ ]+' deployment.yaml)
-                            echo "Found target image tag: $imageTag"
-                            
-                            # Modifying the file safely
-                            sed -i "s/${AWS_ECR_REPO_NAME}:${imageTag}/${AWS_ECR_REPO_NAME}:${BUILD_NUMBER}/" deployment.yaml
+                            # Robust replacement: Replaces the entire image line
+                            sed -i "s|image:.*|image: ${REPOSITORY_URI}${AWS_ECR_REPO_NAME}:${BUILD_NUMBER}|" deployment.yaml
                             
                             git add deployment.yaml
-                            git commit -m "Update deployment Image to version ${BUILD_NUMBER}"
+                            git commit -m "Update backend image to ${BUILD_NUMBER}"
                             git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:master
-                        '''
+                        """
                     }
                 }
             }
