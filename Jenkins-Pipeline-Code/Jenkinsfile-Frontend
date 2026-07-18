@@ -5,9 +5,11 @@ pipeline {
     }
     environment {
         SCANNER_HOME = tool 'sonar-scanner'
+        // Ensure this credential is set to 136380264976 in Jenkins
         AWS_ACCOUNT_ID = credentials('ACCOUNT_ID')
         AWS_ECR_REPO_NAME = credentials('ECR_REPO01')
         AWS_DEFAULT_REGION = 'us-east-2'
+        // This will now correctly build the URI using the updated AWS_ACCOUNT_ID
         REPOSITORY_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/"
     }
     stages {
@@ -19,7 +21,7 @@ pipeline {
         stage('Checkout from Git') {
             steps {
                 git credentialsId: 'GITHUB', 
-                    branch: 'master', // Change to 'main' if your repository uses main
+                    branch: 'master', 
                     url: 'https://github.com/cloud-1997/End-to-End-Kubernetes-Three-Tier-DevSecOps-Project.git'
             }
         }
@@ -27,7 +29,6 @@ pipeline {
             steps {
                 dir('Application-Code/frontend') {
                     withSonarQubeEnv('sonar-server') {
-                        // Using double quotes so Jenkins correctly expands $SCANNER_HOME
                         sh """
                             $SCANNER_HOME/bin/sonar-scanner \
                             -Dsonar.projectKey=three-tier-frontend \
@@ -59,7 +60,6 @@ pipeline {
                     dir('Application-Code/frontend') {
                         sh 'docker system prune -f'
                         sh 'docker container prune -f'
-                        // Changed to double quotes for variable expansion
                         sh "docker build -t ${AWS_ECR_REPO_NAME} ."
                     }
                 }
@@ -68,7 +68,6 @@ pipeline {
         stage("ECR Image Pushing") {
             steps {
                 script {
-                    // Changed to double quotes for variable expansion
                     sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${REPOSITORY_URI}"
                     sh "docker tag ${AWS_ECR_REPO_NAME} ${REPOSITORY_URI}${AWS_ECR_REPO_NAME}:${BUILD_NUMBER}"
                     sh "docker push ${REPOSITORY_URI}${AWS_ECR_REPO_NAME}:${BUILD_NUMBER}"
@@ -77,7 +76,6 @@ pipeline {
         }
         stage("TRIVY Image Scan") {
             steps {
-                // Changed to double quotes for variable expansion
                 sh "trivy image ${REPOSITORY_URI}${AWS_ECR_REPO_NAME}:${BUILD_NUMBER} > trivyimage.txt" 
             }
         }
@@ -88,23 +86,18 @@ pipeline {
             }
             steps {
                 dir('Kubernetes-Manifests-file/Frontend') {
-                    // Using usernamePassword to extract your token cleanly from your 'GITHUB' credential
                     withCredentials([usernamePassword(credentialsId: 'GITHUB', usernameVariable: 'GIT_USER', passwordVariable: 'GITHUB_TOKEN')]) {
-                        sh '''
+                        sh """
                             git config user.email "rohitbomman1997@gmail.com"
                             git config user.name "cloud-1997"
                             
-                            # Safely parse out the current tag assigned to frontend
-                            imageTag=$(grep -oP '(?<=frontend:)[^ ]+' deployment.yaml)
-                            echo "Current image tag found: $imageTag"
-                            
-                            # Replace the tag with the current build number
-                            sed -i "s/${AWS_ECR_REPO_NAME}:${imageTag}/${AWS_ECR_REPO_NAME}:${BUILD_NUMBER}/" deployment.yaml
+                            # Robust replacement: Replaces the entire image line with the correct URI and Tag
+                            sed -i "s|image:.*|image: ${REPOSITORY_URI}${AWS_ECR_REPO_NAME}:${BUILD_NUMBER}|" deployment.yaml
                             
                             git add deployment.yaml
-                            git commit -m "Update frontend deployment Image to version ${BUILD_NUMBER}"
+                            git commit -m "Update frontend image to ${BUILD_NUMBER}"
                             git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:master
-                        '''
+                        """
                     }
                 }
             }
