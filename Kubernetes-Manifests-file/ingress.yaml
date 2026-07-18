@@ -4,11 +4,15 @@ metadata:
   name: mainlb
   namespace: three-tier
   annotations:
+    # Scheme and Target Type
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
-    # REPLACE THESE WITH YOUR ACTUAL PUBLIC SUBNET IDs
+    
+    # FORCED SUBNET MAPPING
+    # Replace these IDs with the actual IDs of your two Public Subnets
     alb.ingress.kubernetes.io/subnets: "subnet-070b3664542dd7ab0,subnet-03b3d0c01f0a4d16a"
+    
     # Health check configuration
     alb.ingress.kubernetes.io/healthcheck-path: /healthz
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
@@ -17,6 +21,9 @@ metadata:
     alb.ingress.kubernetes.io/healthy-threshold-count: '2'
     alb.ingress.kubernetes.io/unhealthy-threshold-count: '2'
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: '15'
+    
+    # Force refresh annotation (if you need to trigger an update)
+    alb.ingress.kubernetes.io/version: "1.2"
 spec:
   ingressClassName: alb
   rules:
